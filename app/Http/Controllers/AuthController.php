@@ -27,7 +27,7 @@ class AuthController extends Controller
 
     public function me()
     {
-        return response()->json(Auth::user()); // Use Auth facade explicitly
+        return response()->json(Auth::user());
     }
 
     protected function respondWithToken($token)
