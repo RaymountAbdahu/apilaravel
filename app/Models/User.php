@@ -7,6 +7,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Tymon\JWTAuth\Contracts\JWTSubject; // Import this for JWT functionality
 use Laravel\Sanctum\HasApiTokens; // Ensure the correct import for HasApiTokens
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class User extends Authenticatable implements JWTSubject
 {
@@ -46,9 +47,9 @@ class User extends Authenticatable implements JWTSubject
     /**
      * Get the rooms owned by the user.
      */
-    public function rooms()
+    public function rooms(): HasMany
     {
-        return $this->hasMany(Room::class);
+        return $this->hasMany(Room::class, 'user_id');
     }
 
     /**
