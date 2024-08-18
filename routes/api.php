@@ -15,9 +15,8 @@ Route::post('logout', [AuthController::class, 'logout']);
 Route::get('me', [AuthController::class, 'me']);
 
 Route::middleware('auth:api')->group(function () {
-    Route::get('total-usage', [ViewController::class, 'totalUsage']);
-    Route::get('fetchData', [ViewController::class, 'getData']);
-    Route::get('power-usage', [ViewController::class, 'getPowerUsage']);
     Route::get('rooms-with-usage', [ViewController::class, 'getAllRoomsWithUsage']);
     Route::get('user', [ViewController::class, 'getAuthenticatedUser']);
+    Route::get('fetchHome', [ViewController::class, 'getHome']);
+    Route::get('fetchDevice', [ViewController::class, 'getDevice']);
 });
