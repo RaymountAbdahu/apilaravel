@@ -3,9 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Models\Room;
+use App\Models\Electric;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class ViewController extends Controller
 {
@@ -54,81 +56,214 @@ class ViewController extends Controller
         return response()->json(['user' => $userData]);
     }
 
-    public function getHome()
+    public function getAllAdmin()
     {
-        $user = Auth::user();
-        $pricePerKwh = 1444.70; // Harga per kWh
-        $today = Carbon::today(); // Get Hari Ini
-        $startOfMonth = Carbon::now()->startOfMonth(); // Get Awal Bulan Ini
+        $pricePerKWh = 1440; // Harga per kWh dalam rupiah
+        $startOfMonth = Carbon::now()->startOfMonth();
+        $today = Carbon::today();
 
-        // Get rooms dengan electric yang digunakan hari ini
-        $rooms = $user->rooms()->with(['electrics' => function($query) use ($today) {
-            $query->whereDate('updated_at', $today);
+        $totalEnergyToday = 0;
+        $totalEnergyThisMonth = 0;
+        $roomData = [];
+
+        // Ambil semua ruangan
+        $rooms = Room::with(['electrics' => function($query) use ($startOfMonth) {
+            $query->where('created_at', '>=', $startOfMonth)->orderBy('created_at', 'desc');
         }])->get();
 
-        // Inisialisasi Awal
-        $totalUsageToday = 0;
-        $totalUsageMonth = 0;
+        foreach ($rooms as $room) {
+            $electrics = $room->electrics;
 
-        // Prepare the data to return
-        $electricsData = $rooms->map(function ($room) use (&$totalUsageToday, &$totalUsageMonth, $startOfMonth) {
-            $roomElectrics = $room->electrics;
+            if ($electrics->isEmpty()) {
+                continue;
+            }
 
-            // Sum the energy usage for each electric device in this room that was updated today
-            $roomUsageToday = $roomElectrics->sum('energy');
-            $totalUsageToday += $roomUsageToday;
+            // Ambil data electrics terakhir pada hari ini
+            $lastElectricToday = $electrics->first(); // Data terakhir pada hari ini
 
-            // Calculate the total energy usage for the current month
-            $roomUsageMonth = $room->electrics()->where('updated_at', '>=', $startOfMonth)->sum('energy');
-            $totalUsageMonth += $roomUsageMonth;
+            // Ambil data electrics terakhir sebelum hari ini (bisa lebih dari 1 hari sebelumnya)
+            $previousElectric = $electrics->where('created_at', '<', $today)->first();
 
-            return [
+            $todayUsage = 0;
+            if ($lastElectricToday && $previousElectric) {
+                // Hitung penggunaan listrik hari ini
+                $todayUsage = $lastElectricToday->energy - $previousElectric->energy;
+                $totalEnergyToday += $todayUsage;
+            }
+
+            // Hitung total penggunaan bulan ini (semua data electrics dalam bulan ini)
+            $totalEnergyThisMonth += $electrics->sum('energy');
+
+            // Simpan data penggunaan untuk setiap ruangan
+            $roomData[] = [
+                'room_id' => $room->id,
                 'room_name' => $room->name,
-                'room_mac' => $room->mac,
-                'electrics' => $roomElectrics->map(function ($electric) {
+                'last_energy_today' => $lastElectricToday->energy ?? 0,
+                'previous_energy' => $previousElectric->energy ?? 0,
+                'today_usage' => $todayUsage,
+            ];
+        }
+
+        // Hitung harga untuk penggunaan listrik
+        $priceToday = $totalEnergyToday * $pricePerKWh;
+        $priceThisMonth = $totalEnergyThisMonth * $pricePerKWh;
+
+        // Format harga dalam Rupiah
+        $formattedPriceToday = 'Rp ' . number_format($priceToday, 2, ',', '.');
+        $formattedPriceThisMonth = 'Rp ' . number_format($priceThisMonth, 2, ',', '.');
+
+        return response()->json([
+            'total_energy_this_month' => $totalEnergyThisMonth,
+            'total_energy_today' => $totalEnergyToday,
+            'price_today' => $formattedPriceToday,
+            'price_this_month' => $formattedPriceThisMonth,
+            'room_usage' => $roomData,
+        ]);
+    }
+    
+    public function getAllHistory(){
+        $startOfMonth = Carbon::now()->startOfMonth();
+        $endOfMonth = Carbon::now()->endOfMonth();
+
+        // Ambil semua ruangan
+        $rooms = Room::all();
+
+        $roomData = [];
+
+        foreach ($rooms as $room) {
+            // Ambil data electrics terakhir setiap hari di bulan ini untuk ruangan ini
+            $dailyElectrics = DB::table('electrics')
+                ->select(DB::raw('DATE(created_at) as date'), DB::raw('MAX(created_at) as latest_time'))
+                ->where('room_id', $room->id)
+                ->whereBetween('created_at', [$startOfMonth, $endOfMonth])
+                ->groupBy(DB::raw('DATE(created_at)'))
+                ->pluck('latest_time'); // Mengambil waktu terbaru tiap hari
+
+            $electricData = Electric::whereIn('created_at', $dailyElectrics)->get(); // Ambil data electric berdasarkan waktu terbaru
+
+            $roomData[] = [
+                'room_id' => $room->id,
+                'room_name' => $room->name,
+                'daily_electric_data' => $electricData->map(function ($electric) {
                     return [
-                        'device_name' => $electric->name_device,
+                        'date' => $electric->created_at->format('Y-m-d'),
                         'voltage' => $electric->voltage,
                         'current' => $electric->current,
                         'power' => $electric->power,
-                        'energy' => number_format($electric->energy, 2, ',', '.'), // Format energy usage
-                        'updated_at' => $electric->updated_at,
+                        'energy' => $electric->energy,
                     ];
                 }),
-                'dayaruangan_hari' => number_format($roomUsageToday, 2, ',', '.'), // Format room usage today
-                'dayaruangan_bulan' => number_format($roomUsageMonth, 2, ',', '.'), // Format room usage month
             ];
-        });
-
-        // Calculate total cost for today and this month
-        $totalCostToday = $totalUsageToday * $pricePerKwh;
-        $totalCostMonth = $totalUsageMonth * $pricePerKwh;
-
-        // Format the cost and total usage to 2 decimal places and add the currency symbol for Rupiah
-        $formattedTotalUsageToday = number_format($totalUsageToday, 2, ',', '.');
-        $formattedTotalUsageMonth = number_format($totalUsageMonth, 2, ',', '.');
-        $formattedCostToday = 'Rp ' . number_format($totalCostToday, 2, ',', '.');
-        $formattedCostMonth = 'Rp ' . number_format($totalCostMonth, 2, ',', '.');
+        }
 
         return response()->json([
-            'electrics' => $electricsData,
-            'totalDaya_hari' => $formattedTotalUsageToday,
-            'totatlHarga_hari' => $formattedCostToday,
-            'totalDaya_bulan' => $formattedTotalUsageMonth,
-            'totalHarga_bulan' => $formattedCostMonth
+            'room_data' => $roomData,
         ]);
     }
 
-    public function getDevice(Request $request)
+    public function getUserHome()
     {
         $user = Auth::user();
-        $today = Carbon::today(); // Get today's date
 
-        // Retrieve rooms along with their electrics that were updated today
-        $rooms = $user->rooms()->with(['electrics' => function($query) use ($today) {
-            $query->whereDate('updated_at', $today);
+        // Ambil semua ruangan yang dimiliki user
+        $rooms = $user->rooms()->with(['electrics' => function ($query) {
+            $query->orderBy('created_at', 'desc');
         }])->get();
 
-        return response()->json(['rooms' => $rooms]);
+        $totalEnergyThisMonth = 0;
+        $totalEnergyToday = 0;
+        $todayUsage = 0;
+        $roomData = [];
+        $pricePerKWh = 1440; // Harga per KWh dalam rupiah
+
+        foreach ($rooms as $room) {
+            $electrics = $room->electrics;
+
+            if ($electrics->isEmpty()) {
+                continue;
+            }
+
+            // Ambil data electrics terakhir (hari ini) dan data sebelum hari ini
+            $lastElectricToday = $electrics->first(); // Data terakhir hari ini
+            $previousElectric = $electrics->where('created_at', '<', Carbon::today())->first(); // Data sebelum hari ini
+
+            if ($lastElectricToday && $previousElectric) {
+                // Hitung penggunaan listrik hari ini
+                $todayUsage = $lastElectricToday->energy - $previousElectric->energy;
+                $totalEnergyToday += $todayUsage; // Total penggunaan listrik hari ini seluruh ruangan
+            }
+
+            // Hitung total penggunaan listrik bulan ini dari data hari ini
+            $startOfMonth = Carbon::now()->startOfMonth();
+            $totalEnergyThisMonth += $electrics->where('created_at', '>=', $startOfMonth)->sum('energy');
+
+            // Simpan data penggunaan untuk setiap ruangan
+            $roomData[] = [
+                'room_id' => $room->id,
+                'room_name' => $room->name,
+                'last_energy_today' => $lastElectricToday->energy ?? 0,
+                'previous_energy' => $previousElectric->energy ?? 0,
+                'today_usage' => $todayUsage,
+            ];
+        }
+
+        // Hitung harga untuk penggunaan listrik
+        $priceToday = $totalEnergyToday * $pricePerKWh;
+        $priceThisMonth = $totalEnergyThisMonth * $pricePerKWh;
+
+        // Format harga dalam Rupiah
+        $formattedPriceToday = 'Rp ' . number_format($priceToday, 2, ',', '.');
+        $formattedPriceThisMonth = 'Rp ' . number_format($priceThisMonth, 2, ',', '.');
+
+        return response()->json([
+            'user_id' => $user->id,
+            'total_energy_this_month' => $totalEnergyThisMonth,
+            'total_energy_today' => $totalEnergyToday,
+            'price_today' => $formattedPriceToday,
+            'price_this_month' => $formattedPriceThisMonth,
+            'room_usage' => $roomData,
+        ]);
+    }
+
+
+    public function getHistory()
+    {
+        $user = Auth::user();
+        $rooms = $user->rooms; // Ambil semua ruangan yang dimiliki user
+
+        $startOfMonth = Carbon::now()->startOfMonth();
+        $endOfMonth = Carbon::now()->endOfMonth();
+        $roomData = [];
+
+        foreach ($rooms as $room) {
+            // Ambil data electrics terakhir setiap hari di bulan ini untuk ruangan ini
+            $dailyElectrics = DB::table('electrics')
+                ->select(DB::raw('DATE(created_at) as date'), DB::raw('MAX(created_at) as latest_time'))
+                ->where('room_id', $room->id)
+                ->whereBetween('created_at', [$startOfMonth, $endOfMonth])
+                ->groupBy(DB::raw('DATE(created_at)'))
+                ->pluck('latest_time'); // Mengambil waktu terbaru tiap hari
+
+            $electricData = Electric::whereIn('created_at', $dailyElectrics)->get(); // Ambil data electric berdasarkan waktu terbaru
+
+            $roomData[] = [
+                'room_id' => $room->id,
+                'room_name' => $room->name,
+                'daily_electric_data' => $electricData->map(function ($electric) {
+                    return [
+                        'date' => $electric->created_at->format('Y-m-d'),
+                        'voltage' => $electric->voltage,
+                        'current' => $electric->current,
+                        'power' => $electric->power,
+                        'energy' => $electric->energy,
+                    ];
+                }),
+            ];
+        }
+
+        return response()->json([
+            'user_id' => $user->id,
+            'room_data' => $roomData,
+        ]);
     }
 }
