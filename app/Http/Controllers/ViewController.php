@@ -101,9 +101,9 @@ class ViewController extends Controller
         $roomData[] = [
             'room_id' => $room->id,
             'room_name' => $room->name,
-            'last_energy_today' => number_format($lastElectricToday->energy ?? 0, 2, '.', ''), // 2 angka desimal
-            'previous_energy' => number_format($previousElectric->energy ?? 0, 2, '.', ''), // 2 angka desimal
-            'today_usage' => number_format($todayUsage, 2, '.', ''), // 2 angka desimal
+            'last_energy_today' => $lastElectricToday->energy ?? 0, 
+            'previous_energy' => $previousElectric->energy ?? 0, 
+            'today_usage' => $todayUsage, 
         ];
     }
 
@@ -116,8 +116,8 @@ class ViewController extends Controller
     $formattedPriceThisMonth = 'Rp ' . number_format($priceThisMonth, 2, ',', '.');
 
     return response()->json([
-        'total_energy_this_month' => number_format($totalEnergyThisMonth, 2, '.', ''), // 2 angka desimal
-        'total_energy_today' => number_format($totalEnergyToday, 2, '.', ''), // 2 angka desimal
+        'total_energy_this_month' => $totalEnergyThisMonth, 
+        'total_energy_today' => $totalEnergyToday,
         'price_today' => $formattedPriceToday,
         'price_this_month' => $formattedPriceThisMonth,
         'room_usage' => $roomData,
@@ -208,9 +208,9 @@ class ViewController extends Controller
             $roomData[] = [
                 'room_id' => $room->id,
                 'room_name' => $room->name,
-                'last_energy_today' => number_format($lastElectricToday->energy ?? 0, 2, '.', ''), // 2 angka desimal
-                'previous_energy' => number_format($previousElectric->energy ?? 0, 2, '.', ''), // 2 angka desimal
-                'today_usage' => number_format($todayUsage, 2, '.', ''), // 2 angka desimal
+                'last_energy_today' => $lastElectricToday->energy ?? 0, 
+                'previous_energy' => $previousElectric->energy ?? 0, 
+                'today_usage' => $todayUsage, 
             ];
         }
 
@@ -224,8 +224,8 @@ class ViewController extends Controller
 
         return response()->json([
             'user_id' => $user->id,
-            'total_energy_this_month' => number_format($totalEnergyThisMonth, 2, '.', ''), // 2 angka desimal
-            'total_energy_today' => number_format($totalEnergyToday, 2, '.', ''), // 2 angka desimal
+            'total_energy_this_month' => $totalEnergyThisMonth,
+            'total_energy_today' => $totalEnergyToday, 
             'price_today' => $formattedPriceToday,
             'price_this_month' => $formattedPriceThisMonth,
             'room_usage' => $roomData,
