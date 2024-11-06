@@ -138,9 +138,12 @@ class ViewController extends Controller
                 ->select(DB::raw('DATE(created_at) as date'), DB::raw('MAX(created_at) as latest_time'))
                 ->where('room_id', $room->id)
                 ->groupBy(DB::raw('DATE(created_at)'))
+                ->orderByDesc('latest_time') // Urutkan dari data terbaru
                 ->pluck('latest_time');
 
-            $electricData = Electric::whereIn('created_at', $dailyElectrics)->get(); // Ambil data electric berdasarkan waktu terbaru
+            $electricData = Electric::whereIn('created_at', $dailyElectrics)
+                ->orderByDesc('created_at') // Urutkan data electric dari terbaru ke terlama
+                ->get();
 
             $roomData[] = [
                 'room_id' => $room->id,
@@ -161,6 +164,7 @@ class ViewController extends Controller
             'room_data' => $roomData,
         ]);
     }
+
 
 
     public function getUserHome()
@@ -245,9 +249,12 @@ class ViewController extends Controller
                 ->select(DB::raw('DATE(created_at) as date'), DB::raw('MAX(created_at) as latest_time'))
                 ->where('room_id', $room->id)
                 ->groupBy(DB::raw('DATE(created_at)'))
+                ->orderByDesc('latest_time') // Urutkan dari data terbaru
                 ->pluck('latest_time'); // Mengambil waktu terbaru tiap hari
 
-            $electricData = Electric::whereIn('created_at', $dailyElectrics)->get(); // Ambil data electric berdasarkan waktu terbaru
+            $electricData = Electric::whereIn('created_at', $dailyElectrics)
+                ->orderByDesc('created_at') // Urutkan data electric dari terbaru ke terlama
+                ->get();
 
             $roomData[] = [
                 'room_id' => $room->id,
