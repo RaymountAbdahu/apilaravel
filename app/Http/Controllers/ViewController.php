@@ -57,92 +57,88 @@ class ViewController extends Controller
     }
 
     public function getAllAdmin()
-{
-    $pricePerKWh = 1440; // Harga per kWh dalam rupiah
-    $startOfMonth = Carbon::now()->startOfMonth();
-    $today = Carbon::today();
+    {
+        $pricePerKWh = 1440; // Harga per kWh dalam rupiah
+        $startOfMonth = Carbon::now()->startOfMonth();
+        $today = Carbon::today();
 
-    $totalEnergyToday = 0;
-    $totalEnergyThisMonth = 0;
-    $roomData = [];
+        $totalEnergyToday = 0;
+        $totalEnergyThisMonth = 0;
+        $roomData = [];
 
-    // Ambil semua ruangan
-    $rooms = Room::with(['electrics' => function ($query) use ($startOfMonth) {
-        $query->where('created_at', '>=', $startOfMonth)->orderBy('created_at', 'desc');
-    }])->get();
+        // Ambil semua ruangan
+        $rooms = Room::with(['electrics' => function ($query) use ($startOfMonth) {
+            $query->where('created_at', '>=', $startOfMonth)->orderBy('created_at', 'desc');
+        }])->get();
 
-    foreach ($rooms as $room) {
-        $electrics = $room->electrics;
+        foreach ($rooms as $room) {
+            $electrics = $room->electrics;
 
-        if ($electrics->isEmpty()) {
-            continue;
+            if ($electrics->isEmpty()) {
+                continue;
+            }
+
+            // Ambil data electrics terakhir pada hari ini
+            $lastElectricToday = $electrics->first(); // Data terakhir pada hari ini
+
+            // Ambil data electrics terakhir sebelum hari ini (bisa lebih dari 1 hari sebelumnya)
+            $previousElectric = $electrics->where('created_at', '<', $today)->first();
+
+            $todayUsage = 0;
+            if ($lastElectricToday && $previousElectric) {
+                // Hitung penggunaan listrik hari ini
+                $todayUsage = $lastElectricToday->energy - $previousElectric->energy;
+                $totalEnergyToday += $todayUsage;
+            }
+
+            // Ambil data electric terakhir dalam ruangan untuk menghitung total energy bulan ini
+            $lastElectricInRoom = $electrics->first(); // Data terakhir pada ruangan (sudah diurutkan)
+            if ($lastElectricInRoom) {
+                $totalEnergyThisMonth += $lastElectricInRoom->energy;
+            }
+
+            // Simpan data penggunaan untuk setiap ruangan
+            $roomData[] = [
+                'room_id' => $room->id,
+                'room_name' => $room->name,
+                'last_energy_today' => $lastElectricToday->energy ?? 0,
+                'previous_energy' => $previousElectric->energy ?? 0,
+                'today_usage' => $todayUsage,
+            ];
         }
 
-        // Ambil data electrics terakhir pada hari ini
-        $lastElectricToday = $electrics->first(); // Data terakhir pada hari ini
+        // Hitung harga untuk penggunaan listrik
+        $priceToday = $totalEnergyToday * $pricePerKWh;
+        $priceThisMonth = $totalEnergyThisMonth * $pricePerKWh;
 
-        // Ambil data electrics terakhir sebelum hari ini (bisa lebih dari 1 hari sebelumnya)
-        $previousElectric = $electrics->where('created_at', '<', $today)->first();
+        // Format harga dalam Rupiah
+        $formattedPriceToday = 'Rp ' . number_format($priceToday, 2, ',', '.');
+        $formattedPriceThisMonth = 'Rp ' . number_format($priceThisMonth, 2, ',', '.');
 
-        $todayUsage = 0;
-        if ($lastElectricToday && $previousElectric) {
-            // Hitung penggunaan listrik hari ini
-            $todayUsage = $lastElectricToday->energy - $previousElectric->energy;
-            $totalEnergyToday += $todayUsage;
-        }
-
-        // Ambil data electric terakhir dalam ruangan untuk menghitung total energy bulan ini
-        $lastElectricInRoom = $electrics->first(); // Data terakhir pada ruangan (sudah diurutkan)
-        if ($lastElectricInRoom) {
-            $totalEnergyThisMonth += $lastElectricInRoom->energy;
-        }
-
-        // Simpan data penggunaan untuk setiap ruangan
-        $roomData[] = [
-            'room_id' => $room->id,
-            'room_name' => $room->name,
-            'last_energy_today' => $lastElectricToday->energy ?? 0, 
-            'previous_energy' => $previousElectric->energy ?? 0, 
-            'today_usage' => $todayUsage, 
-        ];
+        return response()->json([
+            'total_energy_this_month' => $totalEnergyThisMonth,
+            'total_energy_today' => $totalEnergyToday,
+            'price_today' => $formattedPriceToday,
+            'price_this_month' => $formattedPriceThisMonth,
+            'room_usage' => $roomData,
+        ]);
     }
-
-    // Hitung harga untuk penggunaan listrik
-    $priceToday = $totalEnergyToday * $pricePerKWh;
-    $priceThisMonth = $totalEnergyThisMonth * $pricePerKWh;
-
-    // Format harga dalam Rupiah
-    $formattedPriceToday = 'Rp ' . number_format($priceToday, 2, ',', '.');
-    $formattedPriceThisMonth = 'Rp ' . number_format($priceThisMonth, 2, ',', '.');
-
-    return response()->json([
-        'total_energy_this_month' => $totalEnergyThisMonth, 
-        'total_energy_today' => $totalEnergyToday,
-        'price_today' => $formattedPriceToday,
-        'price_this_month' => $formattedPriceThisMonth,
-        'room_usage' => $roomData,
-    ]);
-}
 
 
     public function getAllHistory()
     {
-        $startOfMonth = Carbon::now()->startOfMonth();
-        $endOfMonth = Carbon::now()->endOfMonth();
-
         // Ambil semua ruangan
         $rooms = Room::all();
 
         $roomData = [];
 
         foreach ($rooms as $room) {
-            // Ambil data electrics terakhir setiap hari di bulan ini untuk ruangan ini
+            // Ambil data electrics terakhir setiap hari untuk ruangan ini
             $dailyElectrics = DB::table('electrics')
                 ->select(DB::raw('DATE(created_at) as date'), DB::raw('MAX(created_at) as latest_time'))
                 ->where('room_id', $room->id)
-                ->whereBetween('created_at', [$startOfMonth, $endOfMonth])
                 ->groupBy(DB::raw('DATE(created_at)'))
-                ->pluck('latest_time'); // Mengambil waktu terbaru tiap hari
+                ->pluck('latest_time');
 
             $electricData = Electric::whereIn('created_at', $dailyElectrics)->get(); // Ambil data electric berdasarkan waktu terbaru
 
@@ -166,6 +162,7 @@ class ViewController extends Controller
         ]);
     }
 
+
     public function getUserHome()
     {
         $user = Auth::user();
@@ -179,7 +176,7 @@ class ViewController extends Controller
         $totalEnergyToday = 0;
         $todayUsage = 0;
         $roomData = [];
-        $pricePerKWh = 1440; 
+        $pricePerKWh = 1440;
 
         foreach ($rooms as $room) {
             $electrics = $room->electrics;
@@ -208,9 +205,9 @@ class ViewController extends Controller
             $roomData[] = [
                 'room_id' => $room->id,
                 'room_name' => $room->name,
-                'last_energy_today' => $lastElectricToday->energy ?? 0, 
-                'previous_energy' => $previousElectric->energy ?? 0, 
-                'today_usage' => $todayUsage, 
+                'last_energy_today' => $lastElectricToday->energy ?? 0,
+                'previous_energy' => $previousElectric->energy ?? 0,
+                'today_usage' => $todayUsage,
             ];
         }
 
@@ -225,7 +222,7 @@ class ViewController extends Controller
         return response()->json([
             'user_id' => $user->id,
             'total_energy_this_month' => $totalEnergyThisMonth,
-            'total_energy_today' => $totalEnergyToday, 
+            'total_energy_today' => $totalEnergyToday,
             'price_today' => $formattedPriceToday,
             'price_this_month' => $formattedPriceThisMonth,
             'room_usage' => $roomData,
@@ -240,16 +237,13 @@ class ViewController extends Controller
         $user = Auth::user();
         $rooms = $user->rooms; // Ambil semua ruangan yang dimiliki user
 
-        $startOfMonth = Carbon::now()->startOfMonth();
-        $endOfMonth = Carbon::now()->endOfMonth();
         $roomData = [];
 
         foreach ($rooms as $room) {
-            // Ambil data electrics terakhir setiap hari di bulan ini untuk ruangan ini
+            // Ambil data electrics terakhir setiap hari untuk ruangan ini
             $dailyElectrics = DB::table('electrics')
                 ->select(DB::raw('DATE(created_at) as date'), DB::raw('MAX(created_at) as latest_time'))
                 ->where('room_id', $room->id)
-                ->whereBetween('created_at', [$startOfMonth, $endOfMonth])
                 ->groupBy(DB::raw('DATE(created_at)'))
                 ->pluck('latest_time'); // Mengambil waktu terbaru tiap hari
 
